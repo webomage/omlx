@@ -59,7 +59,7 @@ class PrefillReadyRotatingKVCache(RotatingKVCache):
 
 
 def restore_bonsai_quantized_modules(model: nn.Module) -> int:
-    """Keep oMLX's quantized module and kernel paths after VLM loading."""
+    """Rebind mlx-vlm 1-bit modules to the stock MLX quantized modules."""
     from mlx_vlm.quantization.one_bit import OneBitEmbedding, OneBitLinear
 
     restored = 0
@@ -70,16 +70,6 @@ def restore_bonsai_quantized_modules(model: nn.Module) -> int:
     for _, module in model.named_modules():
         replacement = replacements.get(type(module))
         if replacement is not None:
-            if restored == 0:
-                from ..patches.bonsai_qmv import (
-                    apply_bonsai_construct_patch,
-                    apply_bonsai_qmv_patch,
-                )
-                from ..patches.bonsai_t5_load import apply_bonsai_t5_load_patch
-
-                apply_bonsai_t5_load_patch()
-                apply_bonsai_construct_patch()
-                apply_bonsai_qmv_patch()
             # Both classes store the same packed tensors and quantization fields.
             # Rebinding preserves loaded weights, frozen parameters, and aliases.
             module.__class__ = replacement
@@ -573,6 +563,12 @@ class VLMModelAdapter(nn.Module):
         hook = getattr(self._language_model, "prefetch_ple", None)
         if hook is not None:
             hook(next_ids, current_ids)
+
+    def prefetch_engram(self, next_ids: mx.array, current_ids: mx.array, cache=None) -> None:
+        """Forward the next-chunk Engram notice to DeepSeek V4.1."""
+        hook = getattr(self._language_model, "prefetch_engram", None)
+        if hook is not None:
+            hook(next_ids, current_ids, cache=cache)
 
     def ple_gathers_ahead(self) -> bool:
         """Whether the language model gathers PLE rows one prefill chunk ahead."""
