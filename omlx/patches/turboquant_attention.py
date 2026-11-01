@@ -967,6 +967,18 @@ def apply_turboquant_attention_patch() -> bool:
             "TurboQuant VLM target-verify attention patch skipped", exc_info=True
         )
 
+    try:
+        import mlx_vlm.turboquant as _tq
+        _orig_kernel = getattr(_tq, "_fused_mse_decode_kernel", None)
+        if _orig_kernel is not None:
+            def _safe_fused_mse_decode_kernel(key_bits: int, val_bits: int, dim: int = 256):
+                if dim > 256:
+                    return None
+                return _orig_kernel(key_bits, val_bits, dim)
+            _tq._fused_mse_decode_kernel = _safe_fused_mse_decode_kernel
+    except Exception:
+        logger.debug("TurboQuant safe decode kernel patch skipped", exc_info=True)
+
     original_sdpa = mlx_base.scaled_dot_product_attention
 
     def patched_sdpa(
